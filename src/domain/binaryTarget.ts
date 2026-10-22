@@ -50,7 +50,7 @@ export type ExecutableMetadata =
       readonly availableArchitectures: readonly "hexagon"[];
     }
   | {
-      readonly format: "mach-o" | "elf" | "dos-mz" | "dos-com";
+      readonly format: "mach-o" | "elf" | "dos-mz" | "dos-com" | "le";
       readonly architecture: HeaderArchitecture;
       readonly availableArchitectures: readonly HeaderArchitecture[];
       readonly universalSlice?: never;
@@ -369,7 +369,12 @@ const parseMz = (
     const { offset } = windowsHeader;
     if (offset < 64 || offset > bytes.length - 24)
       return err("invalid or truncated Windows executable header in MZ image");
-    if (["NE", "LE", "LX"].includes(windowsHeader.signature))
+    if (windowsHeader.signature === "LE") {
+      if (offset > bytes.length - LE_HEADER_BYTES)
+        return err("LE header lies outside the bounded prefix");
+      return parseLeRecord(bytes.subarray(offset));
+    }
+    if (["NE", "LX"].includes(windowsHeader.signature))
       return err(
         `unsupported ${windowsHeader.signature} executable in MZ image`,
       );
@@ -386,6 +391,51 @@ const parseMz = (
         availableArchitectures: ["x86"],
       })
     : parsed;
+};
+
+/** Size of the fixed LE header; every field REA validates lies inside it. */
+export const LE_HEADER_BYTES = 0xac;
+
+const LE_CPU_386 = 2;
+const LE_CPU_586 = 4;
+const LE_MODULE_LIBRARY_FLAG = 0x8000;
+const LE_MAX_OBJECTS = 4096;
+
+/**
+ * Parse a bounded LE header without I/O. Only 32-bit little-endian x86
+ * executables, the DOS-extender shape, are admitted; 16-bit and non-x86 LE
+ * modules stay unsupported rather than being treated as x86 by assumption.
+ */
+export const parseLeRecord = (
+  record: Buffer,
+): Result<ExecutableMetadata, string> => {
+  if (
+    record.length < LE_HEADER_BYTES ||
+    record.toString("latin1", 0, 2) !== "LE"
+  )
+    return err("invalid or truncated LE header");
+  if (record[2] !== 0 || record[3] !== 0)
+    return err("unsupported LE byte or word order (not little-endian)");
+  const cpuType = record.readUInt16LE(8);
+  if (cpuType < LE_CPU_386 || cpuType > LE_CPU_586)
+    return err(`unsupported LE CPU type ${cpuType}`);
+  const moduleFlags = record.readUInt32LE(0x10);
+  const pageSize = record.readUInt32LE(0x28);
+  const objectCount = record.readUInt32LE(0x44);
+  if (pageSize === 0) return err("invalid LE page size");
+  if (objectCount === 0 || objectCount > LE_MAX_OBJECTS)
+    return err("invalid LE object count");
+  const entryObject = record.readUInt32LE(0x18);
+  if (
+    (moduleFlags & LE_MODULE_LIBRARY_FLAG) === 0 &&
+    (entryObject === 0 || entryObject > objectCount)
+  )
+    return err("LE entry point names an object outside the object table");
+  return ok({
+    format: "le",
+    architecture: "x86",
+    availableArchitectures: ["x86"],
+  });
 };
 
 /** Parse a bounded PE signature, COFF record, and optional header without I/O. */

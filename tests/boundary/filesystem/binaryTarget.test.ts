@@ -23,6 +23,7 @@ import {
   dosMz,
   elf,
   fat,
+  le,
   pe,
   thinMach,
 } from "../../../src/domain/binaryTarget.fixture.js";
@@ -1141,6 +1142,35 @@ describe("DOS binary target I/O", () => {
         architecture: "x86_64",
         executableRole: "shared-library",
       },
+    });
+  });
+
+  it("resolves an LE header beyond the bounded prefix", async () => {
+    const directory = await createTestTempDirectory("rea-le-target-");
+    const path = join(directory, "extender.exe");
+    const bytes = le(0x2c80);
+    await writeFile(path, bytes);
+
+    expect(await parseBinaryTarget(path)).toMatchObject({
+      ok: true,
+      value: { format: "le", architecture: "x86", kind: "executable" },
+    });
+
+    await writeFile(path, bytes.subarray(0, bytes.length - 1));
+    expect(await parseBinaryTarget(path)).toMatchObject({
+      ok: false,
+      error: {
+        message: "Cannot open artifact: invalid or truncated LE header",
+      },
+    });
+
+    await writeFile(
+      path,
+      le(0x2c80, (record) => record.writeUInt16LE(1, 0x08)),
+    );
+    expect(await parseBinaryTarget(path)).toMatchObject({
+      ok: false,
+      error: { message: "Cannot open artifact: unsupported LE CPU type 1" },
     });
   });
 

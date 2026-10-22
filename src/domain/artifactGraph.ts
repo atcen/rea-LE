@@ -69,6 +69,7 @@ const artifactFormatSchema = z.enum([
   "pe",
   "dos-mz",
   "dos-com",
+  "le",
   "raw-binary",
   "hopper",
   "analysis-database",

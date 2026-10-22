@@ -49,7 +49,9 @@ import {
 import {
   parseCodeViewData,
   claimsExecutableHeader,
+  LE_HEADER_BYTES,
   parseExecutableHeader,
+  parseLeRecord,
   parsePeRecord,
   peDebugDirectoryEntry,
   peRvaToFileOffset,
@@ -360,6 +362,7 @@ const detectArtifactFormat = async (
       | "pe"
       | "dos-mz"
       | "dos-com"
+      | "le"
       | "raw-binary"
     >
   | undefined
@@ -458,6 +461,7 @@ const isArchiveFormat = (
     | "pe"
     | "dos-mz"
     | "dos-com"
+    | "le"
     | "raw-binary"
   >,
 ): format is Extract<BinaryTarget, { kind: "archive" }>["format"] =>
@@ -575,7 +579,7 @@ const readExecutableMetadata = async (
     if (windowsHeader.state === "declared") {
       if (windowsHeader.offset < 64)
         return err("invalid Windows new-header offset in MZ image");
-      return readPeMetadata(
+      return readWindowsNewHeaderMetadata(
         handle,
         windowsHeader.offset,
         bytes,
@@ -715,7 +719,7 @@ const readFatSliceHeaderEvidence = async (
   return { header, sliceHeadersByOffset };
 };
 
-const readPeMetadata = async (
+const readWindowsNewHeaderMetadata = async (
   handle: FileHandle,
   offset: number,
   mzPrefix: Buffer,
@@ -740,7 +744,9 @@ const readPeMetadata = async (
   );
   if (windowsHeader.state !== "declared")
     return err("invalid Windows new-header signature in MZ image");
-  if (["NE", "LE", "LX"].includes(windowsHeader.signature))
+  if (windowsHeader.signature === "LE")
+    return readLeMetadata(handle, offset, signal);
+  if (["NE", "LX"].includes(windowsHeader.signature))
     return err(`unsupported ${windowsHeader.signature} executable in MZ image`);
   const optionalHeaderSize = fileHeader.readUInt16LE(20);
   if (optionalHeaderSize > 4096) return err("invalid PE optional header size");
@@ -759,6 +765,19 @@ const readPeMetadata = async (
     signal,
   );
   return parsePeRecord(record, codeView);
+};
+
+const readLeMetadata = async (
+  handle: FileHandle,
+  offset: number,
+  signal?: AbortSignal,
+): Promise<Result<ExecutableMetadata, string>> => {
+  const record = Buffer.alloc(LE_HEADER_BYTES);
+  const recordRead = await handle.read(record, 0, record.length, offset);
+  throwIfTargetResolutionCancelled(signal);
+  if (recordRead.bytesRead !== record.length)
+    return err("invalid or truncated LE header");
+  return parseLeRecord(record);
 };
 
 const readPeCodeView = async (

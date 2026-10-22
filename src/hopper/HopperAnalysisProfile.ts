@@ -223,6 +223,7 @@ export const hopperLoaderArgsForTarget = (
       return ok(["-l", "WinPE", flag]);
     case "dos-mz":
     case "dos-com":
+    case "le":
       return err(
         new ProviderAdapterError("hopper", "resolve_analysis_profile"),
       );

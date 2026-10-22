@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { dosMz, pe } from "./binaryTarget.fixture.js";
+import { dosMz, le, pe } from "./binaryTarget.fixture.js";
 import { parseExecutableHeader } from "./binaryTarget.js";
 import { observeMzWindowsHeader, parseDosMzHeader } from "./dosMz.js";
 
@@ -163,7 +163,7 @@ describe("DOS MZ load-module validation", () => {
 });
 
 describe("MZ Windows header observations", () => {
-  it.each(["NE", "LE", "LX"])(
+  it.each(["NE", "LX"])(
     "distinguishes unsupported %s from DOS",
     (signature) => {
       const bytes = pe(0x8664);
@@ -227,9 +227,13 @@ describe("MZ Windows header observations", () => {
     });
   });
 
-  it.each(["NE", "LE", "LX"])(
+  it.each([
+    ["NE", "unsupported NE executable in MZ image"],
+    ["LE", "LE header lies outside the bounded prefix"],
+    ["LX", "unsupported LX executable in MZ image"],
+  ])(
     "recognizes short-header %s signatures as Windows declarations",
-    (signature) => {
+    (signature, error) => {
       const stub = dosMz(64);
       const offset = stub.length;
       stub.writeUInt32LE(offset, 60);
@@ -243,7 +247,7 @@ describe("MZ Windows header observations", () => {
       });
       expect(parseExecutableHeader(bytes, "x64")).toEqual({
         ok: false,
-        error: `unsupported ${signature} executable in MZ image`,
+        error,
       });
     },
   );
@@ -279,5 +283,87 @@ describe("MZ Windows header observations", () => {
     expect(parseExecutableHeader(bytes, "x64")).toMatchObject({ ok: false });
     bytes.writeUInt32LE(0xfffffff0, 60);
     expect(parseExecutableHeader(bytes, "x64")).toMatchObject({ ok: false });
+  });
+});
+
+describe("LE executable validation", () => {
+  it("admits a 32-bit little-endian x86 DOS-extender executable", () => {
+    expect(parseExecutableHeader(le(), "x64")).toEqual({
+      ok: true,
+      value: {
+        format: "le",
+        architecture: "x86",
+        availableArchitectures: ["x86"],
+      },
+    });
+  });
+
+  it.each([
+    [
+      "a 286 module",
+      (record: Buffer) => record.writeUInt16LE(1, 0x08),
+      "unsupported LE CPU type 1",
+    ],
+    [
+      "a non-x86 module",
+      (record: Buffer) => record.writeUInt16LE(0x40, 0x08),
+      "unsupported LE CPU type 64",
+    ],
+    [
+      "a big-endian byte order",
+      (record: Buffer) => record.writeUInt8(1, 2),
+      "unsupported LE byte or word order (not little-endian)",
+    ],
+    [
+      "a big-endian word order",
+      (record: Buffer) => record.writeUInt8(1, 3),
+      "unsupported LE byte or word order (not little-endian)",
+    ],
+    [
+      "a zero page size",
+      (record: Buffer) => record.writeUInt32LE(0, 0x28),
+      "invalid LE page size",
+    ],
+    [
+      "an empty object table",
+      (record: Buffer) => record.writeUInt32LE(0, 0x44),
+      "invalid LE object count",
+    ],
+    [
+      "an entry object outside the object table",
+      (record: Buffer) => record.writeUInt32LE(3, 0x18),
+      "LE entry point names an object outside the object table",
+    ],
+    [
+      "a missing entry object in an executable",
+      (record: Buffer) => record.writeUInt32LE(0, 0x18),
+      "LE entry point names an object outside the object table",
+    ],
+  ])("rejects %s", (_name, patch, error) => {
+    expect(parseExecutableHeader(le(0x200, patch), "x64")).toEqual({
+      ok: false,
+      error,
+    });
+  });
+
+  it("does not require an entry object in a library module", () => {
+    const bytes = le(0x200, (record) => {
+      record.writeUInt32LE(0x8000, 0x10);
+      record.writeUInt32LE(0, 0x18);
+    });
+    expect(parseExecutableHeader(bytes, "x64")).toMatchObject({
+      ok: true,
+      value: { format: "le" },
+    });
+  });
+
+  it("rejects an LE header cut off inside the bounded prefix", () => {
+    const bytes = le();
+    expect(
+      parseExecutableHeader(bytes.subarray(0, bytes.length - 1), "x64"),
+    ).toEqual({
+      ok: false,
+      error: "LE header lies outside the bounded prefix",
+    });
   });
 });

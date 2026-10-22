@@ -177,6 +177,14 @@ export class HopperProvider implements AnalysisProviderCandidate {
           "DOS MZ/COM analysis requires the Ghidra 16-bit real-mode adapter.",
         diagnostics,
       };
+    if (target.format === "le")
+      return {
+        status: "unsupported",
+        code: "target_format_unsupported",
+        reason:
+          "LE (DOS-extender) analysis requires the Ghidra adapter with the LX loader extension.",
+        diagnostics,
+      };
     return {
       status: "supported",
       code: null,

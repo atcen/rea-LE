@@ -26,8 +26,8 @@ same admitted target and provider semantics.
 The classifier validates MZ page counts, initialized module length, header and
 relocation-table bounds, relocation destinations, and the initialized entry
 point. It distinguishes DOS load-module and relocation bytes from the Windows
-new-header field. PE remains PE; NE, LE, and LX declarations are explicitly
-unsupported. A damaged declared Windows header does not silently become DOS.
+new-header field. PE remains PE; NE and LX declarations are explicitly unsupported, and LE
+declarations take the 32-bit route described below. A damaged declared Windows header does not silently become DOS.
 Inventory classification returns `unknown` when its bounded prefix cannot
 establish the format; this is distinct from the complete target admission check.
 
@@ -201,3 +201,27 @@ rea annotate-native-function /local/program.com 0x10100 --target-format dos-com 
 ```
 
 The CLI returns the updated analysis before closing its isolated session. MCP edits remain visible to later reads until `close_binary`. Original bytes remain unchanged, database edits are discarded on close, and immutable analysis snapshots are invalidated after edits. This operation does not save a Ghidra project, change ABI/types/body ranges, patch instructions, or emulate a DOS runtime. Windows P0 does not admit it.
+
+## 32-bit DOS-extender executables (LE)
+
+An MZ stub whose new header is `LE` is a Linear Executable, the format used by
+DOS/4GW and similar extenders (for example Watcom-built games). REA admits it as
+format `le` with architecture `x86` only when the header declares a
+little-endian 80386-class CPU (types 2 through 4), a non-zero page size, a
+bounded non-empty object table, and, for executables, an entry object that
+exists. 16-bit and non-x86 LE modules, and OS/2 `LX`, stay unsupported.
+
+```bash
+rea analyze /absolute/path/to/GAME.EXE --provider ghidra --json
+```
+
+Ghidra imports the target with its loader chosen from the header, so this lane
+needs the `ghidra-lx-loader` extension, which some Ghidra distributions bundle.
+Without a working LX loader, `open_binary` fails during import. REA does not
+verify the loader's object mapping or fixups, does not analyze the DOS-extender
+stub or bound overlays, and Ghidra's default x86 compiler specification does not
+model register-based conventions such as Watcom's, so decompiler signatures can
+be inaccurate. Hopper declines `le` targets.
+
+Artifact inventory classifies an LE executable as `unknown` because its header
+lies beyond the bounded classification prefix; open it directly to analyze it.

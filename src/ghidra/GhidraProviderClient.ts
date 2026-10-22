@@ -307,6 +307,11 @@ export const createGhidraProviderClient = (input: {
           "Static DOS analysis does not emulate BIOS, DOS interrupts, device ports, or self-modifying unpacking code. Packed targets require a separately identified unpacked artifact for original-program analysis; appended overlays are not the initialized load module.",
         ]
       : []),
+    ...(target.format === "le"
+      ? [
+          "LE analysis relies on the Ghidra LX loader extension (ghidra-lx-loader) to map objects and apply fixups; REA does not verify its relocation output. DOS-extender stubs and bound overlays are not analyzed, and Ghidra's default x86 compiler specification does not model register-based calling conventions such as Watcom's, so decompiler signatures can be inaccurate.",
+        ]
+      : []),
     ...(target.format === "raw-binary"
       ? [
           "Headerless raw-binary analysis uses the caller-supplied architecture and entry address; file offset 0 is mapped at that address. Headers are not discovered from file bytes.",

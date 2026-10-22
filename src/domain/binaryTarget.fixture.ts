@@ -171,3 +171,26 @@ export const dosMz = (moduleSize = 128): Buffer => {
   if (size >= 64) bytes.writeUInt32LE(0xfedcba98, 60);
   return bytes;
 };
+
+/** MZ stub with an LE header at `offset`, shaped like a DOS-extender executable. */
+export const le = (
+  offset = 0x200,
+  patch?: (record: Buffer) => void,
+): Buffer => {
+  const bytes = Buffer.alloc(offset + 0xac);
+  bytes.write("MZ", 0, "ascii");
+  bytes.writeUInt16LE(4, 8);
+  bytes.writeUInt32LE(offset, 60);
+  const record = bytes.subarray(offset);
+  record.write("LE", 0, "ascii");
+  record.writeUInt16LE(2, 0x08);
+  record.writeUInt16LE(1, 0x0a);
+  record.writeUInt32LE(0x200, 0x10);
+  record.writeUInt32LE(1, 0x14);
+  record.writeUInt32LE(1, 0x18);
+  record.writeUInt32LE(2, 0x20);
+  record.writeUInt32LE(4096, 0x28);
+  record.writeUInt32LE(2, 0x44);
+  patch?.(record);
+  return bytes;
+};

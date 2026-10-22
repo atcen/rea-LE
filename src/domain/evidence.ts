@@ -49,6 +49,7 @@ const subjectFormatSchema = z.enum([
   "pe",
   "dos-mz",
   "dos-com",
+  "le",
   "raw-binary",
   "zip",
   "ipa",

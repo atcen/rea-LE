@@ -185,7 +185,7 @@ export type BinaryTarget =
       readonly managed?: never;
     })
   | (ExecutableTarget & {
-      readonly format: "mach-o" | "elf" | "dos-mz" | "dos-com";
+      readonly format: "mach-o" | "elf" | "dos-mz" | "dos-com" | "le";
       readonly universalSlice?: never;
       readonly executableRole?: never;
       readonly managed?: never;

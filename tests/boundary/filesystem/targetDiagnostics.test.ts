@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { systemDoctorHost } from "../../../src/application/Doctor.js";
 import { parseBinaryTarget } from "../../../src/application/BinaryTargetResolver.js";
 import { projectAnalysisError } from "../../../src/domain/analysisErrorProjection.js";
-import { pe } from "../../../src/domain/binaryTarget.fixture.js";
+import { le, pe } from "../../../src/domain/binaryTarget.fixture.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 
 describe("executable format refusal diagnostics", () => {
@@ -33,23 +33,33 @@ describe("executable format refusal diagnostics", () => {
     },
   );
 
-  it.each(["NE", "LE", "LX"] as const)(
+  const shortHeader = (signature: "NE" | "LX"): Buffer => {
+    const bytes = Buffer.alloc(0x80 + 24);
+    bytes.write("MZ", 0, "ascii");
+    bytes.writeUInt32LE(0x80, 0x3c);
+    bytes.write(signature, 0x80, "ascii");
+    return bytes;
+  };
+
+  it.each([
+    ["NE", shortHeader("NE"), "unsupported NE executable in MZ image"],
+    ["LX", shortHeader("LX"), "unsupported LX executable in MZ image"],
+    [
+      "16-bit LE",
+      le(0x80, (record) => record.writeUInt16LE(1, 0x08)),
+      "unsupported LE CPU type 1",
+    ],
+  ] as const)(
     "reports unsupported %s executables without path advice",
-    async (signature) => {
+    async (name, bytes, reason) => {
       const directory = await createTestTempDirectory(
-        `rea-target-${signature.toLowerCase()}-`,
+        `rea-target-${name.toLowerCase().replace(/[^a-z0-9]+/gu, "-")}-`,
       );
       const path = join(directory, "unsupported.exe");
-      const bytes = Buffer.alloc(0x80 + 24);
-      bytes.write("MZ", 0, "ascii");
-      bytes.writeUInt32LE(0x80, 0x3c);
-      bytes.write(signature, 0x80, "ascii");
       await writeFile(path, bytes);
 
       const result = await parseBinaryTarget(path);
-      if (result.ok)
-        throw new Error(`unsupported ${signature} target was admitted`);
-      const reason = `unsupported ${signature} executable in MZ image`;
+      if (result.ok) throw new Error(`unsupported ${name} target was admitted`);
       const projected = projectAnalysisError(result.error);
       expect(projected).toMatchObject({
         code: "target_unavailable",
